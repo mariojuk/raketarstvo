@@ -1,0 +1,36 @@
+<header class="header">
+  <div class="container header__inner">
+    <a routerLink="/" class="logo">Raketarstvo HR</a>
+    <nav class="nav">
+      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Početna</a>
+      <a routerLink="/natjecanja" routerLinkActive="active">Natjecanja</a>
+      <a routerLink="/povijest" routerLinkActive="active">Povijest</a>
+      @if (auth.isAdmin()) {
+        <a routerLink="/admin" routerLinkActive="active">Admin</a>
+      }
+      @if (auth.isJudge()) {
+        <a routerLink="/sudac" routerLinkActive="active">Sudac</a>
+      }
+    </nav>
+    <div class="auth">
+      @if (auth.isLoggedIn()) {
+        <span class="user">{{ auth.user()?.name }}</span>
+        <button type="button" class="btn btn--ghost" (click)="logout()">Odjava</button>
+      } @else {
+        <a routerLink="/prijava" class="btn">Prijava</a>
+      }
+    </div>
+  </div>
+</header>
+
+<app-notification-host />
+
+<main class="main">
+  <div class="container">
+    <router-outlet />
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="container">© {{ currentYear }} Raketarstvo natjecanja</div>
+</footer>
