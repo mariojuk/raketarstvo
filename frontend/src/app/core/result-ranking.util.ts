@@ -72,7 +72,7 @@ export function buildCategoryResultRows(
       };
     });
 
-  return sortResultRows(rows, competition.rank_overrides ?? [], category);
+  return sortResultRows(rows, competition.rank_overrides ?? [], category, ageCategory);
 }
 
 export function buildTeamResultRows(
@@ -128,10 +128,15 @@ export function sortResultRows(
   rows: CategoryResultRow[],
   overrides: CompetitorRankOverride[],
   category: LaunchCategory,
+  ageCategory: CompetitorAgeCategory,
 ): CategoryResultRow[] {
   const overrideMap = new Map(
     overrides
-      .filter((item) => item.category === category)
+      .filter(
+        (item) =>
+          item.category === category &&
+          (item.age_category ?? ageCategory) === ageCategory,
+      )
       .map((item) => [item.competitor_id, item.tie_break_order]),
   );
 

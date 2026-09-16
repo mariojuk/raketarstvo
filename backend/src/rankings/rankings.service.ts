@@ -12,7 +12,11 @@ export class RankingsService {
     private readonly competitionTeamsService: CompetitionTeamsService,
   ) {}
 
-  async findByCompetition(competitionId: string, category?: LaunchCategory) {
+  async findByCompetition(
+    competitionId: string,
+    category?: LaunchCategory,
+    ageCategory?: string,
+  ) {
     let query = this.supabase.db
       .from('competitor_rank_overrides')
       .select('*')
@@ -21,6 +25,10 @@ export class RankingsService {
 
     if (category) {
       query = query.eq('category', category);
+    }
+
+    if (ageCategory) {
+      query = query.eq('age_category', ageCategory);
     }
 
     return unwrapSupabase(await query);
@@ -32,7 +40,8 @@ export class RankingsService {
         .from('competitor_rank_overrides')
         .delete()
         .eq('competition_id', dto.competition_id)
-        .eq('category', dto.category);
+        .eq('category', dto.category)
+        .eq('age_category', dto.age_category);
 
       return [];
     }
@@ -46,6 +55,20 @@ export class RankingsService {
     }
 
     const competitorIds = dto.overrides.map((item) => item.competitor_id);
+    const { data: competitors } = await this.supabase.db
+      .from('competitors')
+      .select('id, age_category')
+      .in('id', competitorIds);
+
+    const invalidAge = (competitors ?? []).some(
+      (item) => item.age_category !== dto.age_category,
+    );
+    if (invalidAge || (competitors ?? []).length !== competitorIds.length) {
+      throw new BadRequestException(
+        'Svi natjecatelji moraju pripadati odabranoj dobnoj kategoriji',
+      );
+    }
+
     const { data: launches } = await this.supabase.db
       .from('launches')
       .select('competitor_id, duration_seconds, failed')
@@ -78,11 +101,13 @@ export class RankingsService {
       .delete()
       .eq('competition_id', dto.competition_id)
       .eq('category', dto.category)
+      .eq('age_category', dto.age_category)
       .in('competitor_id', competitorIds);
 
     const rows = dto.overrides.map((item) => ({
       competition_id: dto.competition_id,
       category: dto.category,
+      age_category: dto.age_category,
       competitor_id: item.competitor_id,
       tie_break_order: item.tie_break_order,
     }));

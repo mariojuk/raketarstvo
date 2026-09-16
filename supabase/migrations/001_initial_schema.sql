@@ -106,10 +106,11 @@ CREATE TABLE competitor_rank_overrides (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   competition_id UUID NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
   category launch_category NOT NULL,
+  age_category TEXT NOT NULL DEFAULT 'osnovna' CHECK (age_category IN ('osnovna', 'srednje')),
   competitor_id UUID NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
   tie_break_order INT NOT NULL CHECK (tie_break_order >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (competition_id, category, competitor_id)
+  UNIQUE (competition_id, category, age_category, competitor_id)
 );
 
 CREATE INDEX idx_competitions_status ON competitions(status);
@@ -117,7 +118,7 @@ CREATE INDEX idx_launches_competition ON launches(competition_id);
 CREATE INDEX idx_team_members_team ON team_members(team_id);
 CREATE INDEX idx_competition_teams_competition ON competition_teams(competition_id);
 CREATE INDEX idx_judge_assignments_judge ON judge_assignments(judge_id);
-CREATE INDEX idx_rank_overrides_competition ON competitor_rank_overrides(competition_id, category);
+CREATE INDEX idx_rank_overrides_competition ON competitor_rank_overrides(competition_id, category, age_category);
 
 ALTER TABLE launches REPLICA IDENTITY FULL;
 ALTER TABLE competitions REPLICA IDENTITY FULL;

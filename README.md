@@ -24,11 +24,14 @@ test/
 ## Postavljanje Supabase
 
 1. Kreirajte projekt na [supabase.com](https://supabase.com)
-2. U **SQL Editor** pokrenite sadržaj datoteke `supabase/migrations/001_initial_schema.sql`
+2. U **SQL Editor** pokrenite migracije iz `supabase/migrations/` **redom** (`001` … `011`)
 3. U **Project Settings → API** kopirajte:
    - Project URL
    - `anon` key (frontend + RLS)
    - `service_role` key (backend – tajno!)
+
+Ako već imate shemu do `010`, pokrenite još `011_rank_overrides_age_category.sql`
+(poredak po dobnoj kategoriji: osnovna/srednje × traka/padobran).
 
 ## Konfiguracija
 

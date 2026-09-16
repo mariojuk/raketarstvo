@@ -1,6 +1,20 @@
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+} from '@angular/core';
+import {
+  FormBuilder,
+  FormGroup,
+  ReactiveFormsModule,
+  Validators,
+} from '@angular/forms';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   SearchableSelectComponent,
   SearchableSelectOption,
@@ -53,17 +67,26 @@ type AdminTab =
 @Component({
   selector: 'app-admin',
   standalone: true,
-  imports: [DecimalPipe, FormsModule, SearchableSelectComponent, ModalComponent],
+  imports: [
+    DecimalPipe,
+    FormsModule,
+    ReactiveFormsModule,
+    SearchableSelectComponent,
+    ModalComponent,
+  ],
   template: `
     <h1 class="page-title">Admin panel</h1>
 
-    <div class="actions" style="margin-bottom: 1rem">
+    <div class="actions" style="margin-bottom: 1rem" role="tablist" aria-label="Admin sekcije">
       @for (tab of tabs; track tab.id) {
         <button
           type="button"
           class="btn"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
           [class.btn--secondary]="activeTab() !== tab.id"
-          (click)="activeTab.set(tab.id)"
+          [disabled]="busy()"
+          (click)="setActiveTab(tab.id)"
         >
           {{ tab.label }}
         </button>
@@ -73,28 +96,20 @@ type AdminTab =
     @switch (activeTab()) {
       @case ('clubs') {
         <section class="card grid">
-          <h2>{{ editingClubId() ? 'Uredi klub' : 'Novi klub' }}</h2>
-          <form (ngSubmit)="saveClub()">
-            <label>Naziv kluba<input [(ngModel)]="clubForm.name" name="clubName" required /></label>
-            <div class="actions">
-              <button class="btn" type="submit">
-                {{ editingClubId() ? 'Spremi promjene' : 'Dodaj klub' }}
-              </button>
-              @if (editingClubId()) {
-                <button type="button" class="btn btn--secondary" (click)="cancelClubEdit()">Odustani</button>
-              }
-            </div>
-          </form>
+          <div class="section-header">
+            <h2>Klubovi</h2>
+            <button type="button" class="btn" (click)="openNewClub()">Novi klub</button>
+          </div>
           <table>
             <thead><tr><th>Naziv</th><th>Akcije</th></tr></thead>
             <tbody>
               @for (club of clubs(); track club.id) {
-                <tr [class.row-editing]="editingClubId() === club.id">
+                <tr>
                   <td>{{ club.name }}</td>
                   <td>
                     <div class="actions">
                       <button type="button" class="btn btn--secondary" (click)="startEditClub(club)">Uredi</button>
-                      <button type="button" class="btn btn--danger" (click)="deleteClub(club.id)">Obriši</button>
+                      <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="deleteClub(club.id)">Obriši</button>
                     </div>
                   </td>
                 </tr>
@@ -134,7 +149,7 @@ type AdminTab =
                     <td>
                       <div class="actions">
                         <button type="button" class="btn btn--secondary" (click)="startEditCompetitor(item)">Uredi</button>
-                        <button type="button" class="btn btn--danger" (click)="deleteCompetitor(item.id)">Obriši</button>
+                        <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="deleteCompetitor(item.id)">Obriši</button>
                       </div>
                     </td>
                   </tr>
@@ -146,37 +161,10 @@ type AdminTab =
       }
       @case ('judges') {
         <section class="card grid">
-          <h2>{{ editingJudgeId() ? 'Uredi suca' : 'Novi sudac' }}</h2>
-          <form (ngSubmit)="saveJudge()">
-            <label>Ime<input [(ngModel)]="judgeForm.name" name="judgeName" required /></label>
-            <label>Email<input type="email" [(ngModel)]="judgeForm.email" name="judgeEmail" required /></label>
-            <label>
-              Lozinka
-              <input
-                type="password"
-                [(ngModel)]="judgeForm.password"
-                name="judgePass"
-                [required]="!editingJudgeId()"
-                [placeholder]="editingJudgeId() ? 'Ostavi prazno ako ne mijenjaš' : ''"
-              />
-            </label>
-            <label>Klub
-              <select [(ngModel)]="judgeForm.club_id" name="judgeClub" required>
-                <option value="">Odaberi klub</option>
-                @for (club of clubs(); track club.id) {
-                  <option [value]="club.id">{{ club.name }}</option>
-                }
-              </select>
-            </label>
-            <div class="actions">
-              <button class="btn" type="submit">
-                {{ editingJudgeId() ? 'Spremi promjene' : 'Dodaj suca' }}
-              </button>
-              @if (editingJudgeId()) {
-                <button type="button" class="btn btn--secondary" (click)="cancelJudgeEdit()">Odustani</button>
-              }
-            </div>
-          </form>
+          <div class="section-header">
+            <h2>Suci</h2>
+            <button type="button" class="btn" (click)="openNewJudge()">Novi sudac</button>
+          </div>
           <label>
             Pretraži
             <input
@@ -195,14 +183,14 @@ type AdminTab =
                 </tr>
               } @else {
                 @for (item of filteredJudges(); track item.id) {
-                  <tr [class.row-editing]="editingJudgeId() === item.id">
+                  <tr>
                     <td>{{ item.name }}</td>
                     <td>{{ item.email }}</td>
                     <td>{{ item.club?.name }}</td>
                     <td>
                       <div class="actions">
                         <button type="button" class="btn btn--secondary" (click)="startEditJudge(item)">Uredi</button>
-                        <button type="button" class="btn btn--danger" (click)="deleteJudge(item.id)">Obriši</button>
+                        <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="deleteJudge(item.id)">Obriši</button>
                       </div>
                     </td>
                   </tr>
@@ -242,6 +230,7 @@ type AdminTab =
                       <button
                         type="button"
                         class="btn"
+                        [disabled]="busy()"
                         [class.btn--secondary]="!item.traka_open"
                         (click)="toggleCategory(item.id, 'traka', !item.traka_open)"
                       >
@@ -259,6 +248,7 @@ type AdminTab =
                       <button
                         type="button"
                         class="btn"
+                        [disabled]="busy()"
                         [class.btn--secondary]="!item.padobran_open"
                         (click)="toggleCategory(item.id, 'padobran', !item.padobran_open)"
                       >
@@ -278,18 +268,18 @@ type AdminTab =
                         Uredi
                       </button>
                       @if (item.status === 'upcoming') {
-                        <button type="button" class="btn" (click)="activateCompetition(item.id)">
+                        <button type="button" class="btn" [disabled]="busy()" (click)="activateCompetition(item.id)">
                           Aktiviraj
                         </button>
                       } @else if (item.status === 'active') {
-                        <button type="button" class="btn btn--danger" (click)="finishCompetition(item.id)">
+                        <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="finishCompetition(item.id)">
                           Završi
                         </button>
                       }
                     </div>
                   </td>
                   <td>
-                    <button type="button" class="btn btn--danger" (click)="deleteCompetition(item.id)">Obriši</button>
+                    <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="deleteCompetition(item.id)">Obriši</button>
                   </td>
                 </tr>
               }
@@ -328,7 +318,7 @@ type AdminTab =
                     <td>
                       <div class="actions">
                         <button type="button" class="btn btn--secondary" (click)="startEditTeam(team)">Uredi</button>
-                        <button type="button" class="btn btn--danger" (click)="deleteTeam(team.id)">Obriši</button>
+                        <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="deleteTeam(team.id)">Obriši</button>
                       </div>
                     </td>
                   </tr>
@@ -376,7 +366,7 @@ type AdminTab =
                     }
                   </select>
                 </label>
-                <button class="btn" type="submit">Registriraj</button>
+                <button class="btn" type="submit" [disabled]="busy()">Registriraj</button>
               </form>
 
               @if (!competitionRegistrations().length) {
@@ -396,7 +386,7 @@ type AdminTab =
                           }
                         </td>
                         <td>
-                          <button type="button" class="btn btn--danger" (click)="unregisterTeam(item.id)">
+                          <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="unregisterTeam(item.id)">
                             Ukloni
                           </button>
                         </td>
@@ -501,7 +491,7 @@ type AdminTab =
                   <button
                     class="btn"
                     type="submit"
-                    [disabled]="assignmentForm.scope === 'member' && !canSubmitMemberAssignments()"
+                    [disabled]="busy() || (assignmentForm.scope === 'member' && !canSubmitMemberAssignments())"
                   >
                     @if (assignmentForm.scope === 'member') {
                       Spremi dodjele
@@ -539,7 +529,7 @@ type AdminTab =
                         }
                       </td>
                       <td>
-                        <button type="button" class="btn btn--danger" (click)="deleteJudgeAssignment(item.id)">
+                        <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="deleteJudgeAssignment(item.id)">
                           Obriši
                         </button>
                       </td>
@@ -574,7 +564,8 @@ type AdminTab =
           @if (rankingCompetitionId) {
             <label>Dobna kategorija
               <select
-                [(ngModel)]="rankingAgeCategory"
+                [ngModel]="rankingAgeCategory()"
+                (ngModelChange)="rankingAgeCategory.set($any($event))"
                 name="rankingAgeCategory"
               >
                 @for (age of ageCategories; track age) {
@@ -584,7 +575,8 @@ type AdminTab =
             </label>
             <label>Kategorija ispaljivanja
               <select
-                [(ngModel)]="rankingCategory"
+                [ngModel]="rankingCategory()"
+                (ngModelChange)="rankingCategory.set($any($event))"
                 name="rankingCategory"
               >
                 @for (category of launchCategories; track category) {
@@ -593,7 +585,7 @@ type AdminTab =
               </select>
             </label>
             <p class="muted">
-              Prikaz: {{ resultViewLabel({ ageCategory: rankingAgeCategory, launchCategory: rankingCategory }) }}
+              Prikaz: {{ resultViewLabel({ ageCategory: rankingAgeCategory(), launchCategory: rankingCategory() }) }}
             </p>
 
             @if (!rankingRows().length) {
@@ -628,7 +620,8 @@ type AdminTab =
                             <button
                               type="button"
                               class="btn btn--secondary"
-                              [disabled]="!canMoveRanking(row.competitorId, 'up')"
+                              aria-label="Pomakni gore u poretku"
+                              [disabled]="busy() || !canMoveRanking(row.competitorId, 'up')"
                               (click)="moveRanking(row.competitorId, 'up')"
                             >
                               ↑
@@ -636,7 +629,8 @@ type AdminTab =
                             <button
                               type="button"
                               class="btn btn--secondary"
-                              [disabled]="!canMoveRanking(row.competitorId, 'down')"
+                              aria-label="Pomakni dolje u poretku"
+                              [disabled]="busy() || !canMoveRanking(row.competitorId, 'down')"
                               (click)="moveRanking(row.competitorId, 'down')"
                             >
                               ↓
@@ -652,7 +646,7 @@ type AdminTab =
               </table>
             }
 
-            <h3>Timovi – {{ resultViewLabel({ ageCategory: rankingAgeCategory, launchCategory: rankingCategory }) }}</h3>
+            <h3>Timovi – {{ resultViewLabel({ ageCategory: rankingAgeCategory(), launchCategory: rankingCategory() }) }}</h3>
             @if (!rankingTeamRows().length) {
               <p class="muted">Nema timova za odabranu kategoriju.</p>
             } @else {
@@ -740,7 +734,7 @@ type AdminTab =
                 Neuspjelo ispaljivanje (0)
               </label>
               <div class="actions">
-                <button class="btn" type="submit">Spremi promjene</button>
+                <button class="btn" type="submit" [disabled]="busy()">Spremi promjene</button>
                 <button type="button" class="btn btn--secondary" (click)="cancelLaunchEdit()">Odustani</button>
               </div>
             </form>
@@ -785,31 +779,119 @@ type AdminTab =
     }
 
     <app-modal
+      [open]="clubModalOpen()"
+      [title]="editingClubId() ? 'Uredi klub' : 'Novi klub'"
+      (closed)="cancelClubEdit()"
+    >
+      <form [formGroup]="clubForm" (ngSubmit)="saveClub()">
+        <label>
+          Naziv kluba
+          <input formControlName="name" />
+          @if (showFieldError(clubForm, 'name')) {
+            <span class="error">{{ fieldErrorMessage(clubForm, 'name') }}</span>
+          }
+        </label>
+        <div class="actions">
+          <button class="btn" type="submit" [disabled]="busy()">
+            {{ editingClubId() ? 'Spremi promjene' : 'Dodaj klub' }}
+          </button>
+          <button type="button" class="btn btn--secondary" (click)="cancelClubEdit()">Odustani</button>
+        </div>
+      </form>
+    </app-modal>
+
+    <app-modal
       [open]="competitorModalOpen()"
       [title]="editingCompetitorId() ? 'Uredi natjecatelja' : 'Novi natjecatelj'"
       (closed)="cancelCompetitorEdit()"
     >
-      <form (ngSubmit)="saveCompetitor()">
-        <label>Ime<input [(ngModel)]="competitorForm.name" name="compName" required /></label>
-        <label>Klub
-          <select [(ngModel)]="competitorForm.club_id" name="compClub" required>
+      <form [formGroup]="competitorForm" (ngSubmit)="saveCompetitor()">
+        <label>
+          Ime
+          <input formControlName="name" />
+          @if (showFieldError(competitorForm, 'name')) {
+            <span class="error">{{ fieldErrorMessage(competitorForm, 'name') }}</span>
+          }
+        </label>
+        <label>
+          Klub
+          <select formControlName="club_id">
             <option value="">Odaberi klub</option>
             @for (club of clubs(); track club.id) {
               <option [value]="club.id">{{ club.name }}</option>
             }
           </select>
+          @if (showFieldError(competitorForm, 'club_id')) {
+            <span class="error">{{ fieldErrorMessage(competitorForm, 'club_id') }}</span>
+          }
         </label>
-        <label>Kategorija
-          <select [(ngModel)]="competitorForm.age_category" name="compAgeCategory" required>
+        <label>
+          Kategorija
+          <select formControlName="age_category">
             <option value="osnovna">{{ competitorAgeLabels.osnovna }}</option>
             <option value="srednje">{{ competitorAgeLabels.srednje }}</option>
           </select>
+          @if (showFieldError(competitorForm, 'age_category')) {
+            <span class="error">{{ fieldErrorMessage(competitorForm, 'age_category') }}</span>
+          }
         </label>
         <div class="actions">
-          <button class="btn" type="submit">
+          <button class="btn" type="submit" [disabled]="busy()">
             {{ editingCompetitorId() ? 'Spremi promjene' : 'Dodaj natjecatelja' }}
           </button>
           <button type="button" class="btn btn--secondary" (click)="cancelCompetitorEdit()">Odustani</button>
+        </div>
+      </form>
+    </app-modal>
+
+    <app-modal
+      [open]="judgeModalOpen()"
+      [title]="editingJudgeId() ? 'Uredi suca' : 'Novi sudac'"
+      (closed)="cancelJudgeEdit()"
+    >
+      <form [formGroup]="judgeForm" (ngSubmit)="saveJudge()">
+        <label>
+          Ime
+          <input formControlName="name" />
+          @if (showFieldError(judgeForm, 'name')) {
+            <span class="error">{{ fieldErrorMessage(judgeForm, 'name') }}</span>
+          }
+        </label>
+        <label>
+          Email
+          <input type="email" formControlName="email" />
+          @if (showFieldError(judgeForm, 'email')) {
+            <span class="error">{{ fieldErrorMessage(judgeForm, 'email') }}</span>
+          }
+        </label>
+        <label>
+          Lozinka
+          <input
+            type="password"
+            formControlName="password"
+            [placeholder]="editingJudgeId() ? 'Ostavi prazno ako ne mijenjaš' : ''"
+          />
+          @if (showFieldError(judgeForm, 'password')) {
+            <span class="error">{{ fieldErrorMessage(judgeForm, 'password') }}</span>
+          }
+        </label>
+        <label>
+          Klub
+          <select formControlName="club_id">
+            <option value="">Odaberi klub</option>
+            @for (club of clubs(); track club.id) {
+              <option [value]="club.id">{{ club.name }}</option>
+            }
+          </select>
+          @if (showFieldError(judgeForm, 'club_id')) {
+            <span class="error">{{ fieldErrorMessage(judgeForm, 'club_id') }}</span>
+          }
+        </label>
+        <div class="actions">
+          <button class="btn" type="submit" [disabled]="busy()">
+            {{ editingJudgeId() ? 'Spremi promjene' : 'Dodaj suca' }}
+          </button>
+          <button type="button" class="btn btn--secondary" (click)="cancelJudgeEdit()">Odustani</button>
         </div>
       </form>
     </app-modal>
@@ -819,44 +901,51 @@ type AdminTab =
       [title]="editingCompetitionId() ? 'Uredi natjecanje' : 'Novo natjecanje'"
       (closed)="cancelCompetitionEdit()"
     >
-      <form (ngSubmit)="saveCompetition()">
-        <label>Naziv<input [(ngModel)]="competitionForm.name" name="competitionName" required /></label>
-        <label>Lokacija<input [(ngModel)]="competitionForm.location" name="competitionLocation" /></label>
+      <form [formGroup]="competitionForm" (ngSubmit)="saveCompetition()">
+        <label>
+          Naziv
+          <input formControlName="name" />
+          @if (showFieldError(competitionForm, 'name')) {
+            <span class="error">{{ fieldErrorMessage(competitionForm, 'name') }}</span>
+          }
+        </label>
+        <label>Lokacija<input formControlName="location" /></label>
         @if (!editingCompetitionId()) {
-          <label>Status
-            <select [(ngModel)]="competitionForm.status" name="competitionStatus">
+          <label>
+            Status
+            <select formControlName="status">
               <option value="upcoming">Nadolazeće</option>
               <option value="active">Aktivno</option>
               <option value="finished">Završeno</option>
             </select>
           </label>
         }
-        <label>Broj ispaljivanja po kategoriji
-          <select [(ngModel)]="competitionForm.launches_per_category" name="launchesPerCategory">
+        <label>
+          Broj ispaljivanja po kategoriji
+          <select formControlName="launches_per_category">
             <option [ngValue]="2">2</option>
             <option [ngValue]="3">3</option>
           </select>
+          @if (showFieldError(competitionForm, 'launches_per_category')) {
+            <span class="error">{{ fieldErrorMessage(competitionForm, 'launches_per_category') }}</span>
+          }
         </label>
-        <label>Trajanje kategorije Traka (min)
-          <input
-            type="number"
-            min="1"
-            [(ngModel)]="competitionForm.traka_window_minutes"
-            name="trakaWindowMinutes"
-            required
-          />
+        <label>
+          Trajanje kategorije Traka (min)
+          <input type="number" min="1" formControlName="traka_window_minutes" />
+          @if (showFieldError(competitionForm, 'traka_window_minutes')) {
+            <span class="error">{{ fieldErrorMessage(competitionForm, 'traka_window_minutes') }}</span>
+          }
         </label>
-        <label>Trajanje kategorije Padobran (min)
-          <input
-            type="number"
-            min="1"
-            [(ngModel)]="competitionForm.padobran_window_minutes"
-            name="padobranWindowMinutes"
-            required
-          />
+        <label>
+          Trajanje kategorije Padobran (min)
+          <input type="number" min="1" formControlName="padobran_window_minutes" />
+          @if (showFieldError(competitionForm, 'padobran_window_minutes')) {
+            <span class="error">{{ fieldErrorMessage(competitionForm, 'padobran_window_minutes') }}</span>
+          }
         </label>
         <div class="actions">
-          <button class="btn" type="submit">
+          <button class="btn" type="submit" [disabled]="busy()">
             {{ editingCompetitionId() ? 'Spremi promjene' : 'Kreiraj natjecanje' }}
           </button>
           <button type="button" class="btn btn--secondary" (click)="cancelCompetitionEdit()">Odustani</button>
@@ -869,30 +958,36 @@ type AdminTab =
       [title]="editingTeamId() ? 'Uredi tim' : 'Novi tim'"
       (closed)="cancelTeamEdit()"
     >
-      <form (ngSubmit)="saveTeam()">
-        <label>Naziv tima<input [(ngModel)]="teamForm.name" name="teamName" /></label>
-        <label>Natjecatelj 1
+      <form [formGroup]="teamForm" (ngSubmit)="saveTeam()">
+        <label>Naziv tima<input formControlName="name" /></label>
+        <label>
+          Natjecatelj 1
           <app-searchable-select
-            [(ngModel)]="teamForm.competitor1"
-            name="comp1"
+            formControlName="competitor1"
             [options]="competitorOptions()"
             placeholder="Pretraži i odaberi natjecatelja..."
             [required]="true"
           />
+          @if (showFieldError(teamForm, 'competitor1')) {
+            <span class="error">{{ fieldErrorMessage(teamForm, 'competitor1') }}</span>
+          }
         </label>
-        <label>Natjecatelj 2
+        <label>
+          Natjecatelj 2
           <app-searchable-select
-            [(ngModel)]="teamForm.competitor2"
-            name="comp2"
+            formControlName="competitor2"
             [options]="competitorOptions()"
             placeholder="Pretraži i odaberi natjecatelja..."
             [required]="true"
           />
+          @if (showFieldError(teamForm, 'competitor2')) {
+            <span class="error">{{ fieldErrorMessage(teamForm, 'competitor2') }}</span>
+          }
         </label>
-        <label>Natjecatelj 3 (opcionalno)
+        <label>
+          Natjecatelj 3 (opcionalno)
           <app-searchable-select
-            [(ngModel)]="teamForm.competitor3"
-            name="comp3"
+            formControlName="competitor3"
             [options]="competitorOptions()"
             placeholder="Pretraži i odaberi natjecatelja..."
             emptyLabel="Bez trećeg"
@@ -900,7 +995,7 @@ type AdminTab =
           />
         </label>
         <div class="actions">
-          <button class="btn" type="submit">
+          <button class="btn" type="submit" [disabled]="busy()">
             {{ editingTeamId() ? 'Spremi promjene' : 'Kreiraj tim' }}
           </button>
           <button type="button" class="btn btn--secondary" (click)="cancelTeamEdit()">Odustani</button>
@@ -924,10 +1019,15 @@ type AdminTab =
     `,
   ],
 })
-export class AdminComponent implements OnInit {
+export class AdminComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly notifications = inject(NotificationService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly fb = inject(FormBuilder);
+  private nowTimerId: ReturnType<typeof setInterval> | null = null;
+  private readonly loadedTabs = new Set<AdminTab>();
 
   readonly statusLabels = STATUS_LABELS;
   readonly categoryLabels = CATEGORY_LABELS;
@@ -944,6 +1044,7 @@ export class AdminComponent implements OnInit {
   ];
 
   readonly activeTab = signal<AdminTab>('clubs');
+  readonly busy = signal(false);
   readonly clubs = signal<Club[]>([]);
   readonly competitors = signal<Competitor[]>([]);
   readonly judges = signal<Judge[]>([]);
@@ -956,7 +1057,9 @@ export class AdminComponent implements OnInit {
   readonly editingJudgeId = signal<string | null>(null);
   readonly editingCompetitionId = signal<string | null>(null);
   readonly editingTeamId = signal<string | null>(null);
+  readonly clubModalOpen = signal(false);
   readonly competitorModalOpen = signal(false);
+  readonly judgeModalOpen = signal(false);
   readonly competitionModalOpen = signal(false);
   readonly teamModalOpen = signal(false);
   readonly resultTeams = signal<Team[]>([]);
@@ -971,10 +1074,10 @@ export class AdminComponent implements OnInit {
   readonly resultViewLabel = resultViewLabel;
   readonly rankingCompetition = signal<CompetitionDetails | null>(null);
   readonly rankingLaunches = signal<Launch[]>([]);
+  readonly rankingAgeCategory = signal<CompetitorAgeCategory>('osnovna');
+  readonly rankingCategory = signal<LaunchCategory>('traka');
 
   rankingCompetitionId = '';
-  rankingAgeCategory: CompetitorAgeCategory = 'osnovna';
-  rankingCategory: LaunchCategory = 'traka';
 
   private readonly rankingCompetitorById = new Map<string, Competitor>();
 
@@ -986,10 +1089,10 @@ export class AdminComponent implements OnInit {
 
     return buildCategoryResultRows(
       competition,
-      this.rankingCategory,
+      this.rankingCategory(),
       this.rankingLaunches(),
       this.rankingCompetitorById,
-      this.rankingAgeCategory,
+      this.rankingAgeCategory(),
     );
   });
 
@@ -1001,9 +1104,9 @@ export class AdminComponent implements OnInit {
 
     return buildTeamResultRows(
       competition,
-      this.rankingCategory,
+      this.rankingCategory(),
       this.rankingLaunches(),
-      this.rankingAgeCategory,
+      this.rankingAgeCategory(),
     );
   });
 
@@ -1098,49 +1201,195 @@ export class AdminComponent implements OnInit {
     ]),
   );
 
-  clubForm = { name: '' };
-  competitorForm = { name: '', club_id: '', age_category: 'osnovna' as CompetitorAgeCategory };
-  judgeForm = { name: '', email: '', password: '', club_id: '' };
-  competitionForm = {
-    name: '',
-    location: '',
-    status: 'upcoming' as Competition['status'],
-    launches_per_category: 2,
-    traka_window_minutes: 30,
-    padobran_window_minutes: 45,
-  };
-  teamForm = {
-    name: '',
-    competitor1: '',
-    competitor2: '',
-    competitor3: '',
-  };
+  readonly clubForm = this.fb.group({
+    name: ['', Validators.required],
+  });
+
+  readonly competitorForm = this.fb.group({
+    name: ['', Validators.required],
+    club_id: ['', Validators.required],
+    age_category: ['osnovna' as CompetitorAgeCategory, Validators.required],
+  });
+
+  readonly judgeForm = this.fb.group({
+    name: ['', Validators.required],
+    email: ['', [Validators.required, Validators.email]],
+    password: [''],
+    club_id: ['', Validators.required],
+  });
+
+  readonly competitionForm = this.fb.group({
+    name: ['', Validators.required],
+    location: [''],
+    status: ['upcoming' as Competition['status']],
+    launches_per_category: [2, Validators.required],
+    traka_window_minutes: [30, [Validators.required, Validators.min(1)]],
+    padobran_window_minutes: [45, [Validators.required, Validators.min(1)]],
+  });
+
+  readonly teamForm = this.fb.group({
+    name: [''],
+    competitor1: ['', Validators.required],
+    competitor2: ['', Validators.required],
+    competitor3: [''],
+  });
 
   readonly now = signal(Date.now());
 
   async ngOnInit(): Promise<void> {
-    await this.reloadAll();
-    await this.loadAllTeams();
-    setInterval(() => this.now.set(Date.now()), 1000);
+    const tab = this.route.snapshot.queryParamMap.get('tab');
+    if (tab && this.tabs.some((item) => item.id === tab)) {
+      this.activeTab.set(tab as AdminTab);
+    }
+
+    this.nowTimerId = setInterval(() => this.now.set(Date.now()), 1000);
+    await this.ensureTabData(this.activeTab());
+  }
+
+  ngOnDestroy(): void {
+    if (this.nowTimerId !== null) {
+      clearInterval(this.nowTimerId);
+      this.nowTimerId = null;
+    }
+  }
+
+  async setActiveTab(tab: AdminTab): Promise<void> {
+    this.activeTab.set(tab);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    await this.ensureTabData(tab);
   }
 
   private token(): string {
     return this.auth.getToken() ?? '';
   }
 
-  private async reloadAll(): Promise<void> {
-    const token = this.token();
-    const [clubs, competitors, judges, competitions] = await Promise.all([
-      this.api.get<Club[]>('/clubs', token),
-      this.api.get<Competitor[]>('/competitors'),
-      this.api.get<Judge[]>('/judges', token),
-      this.api.get<Competition[]>('/competitions'),
-    ]);
+  private confirmDelete(label: string): boolean {
+    return window.confirm(`Obrisati ${label}? Ova radnja se ne može poništiti.`);
+  }
 
-    this.clubs.set(clubs);
-    this.competitors.set(competitors);
-    this.judges.set(judges);
-    this.competitions.set(competitions);
+  private async withBusy(action: () => Promise<void>): Promise<void> {
+    if (this.busy()) {
+      return;
+    }
+
+    this.busy.set(true);
+    try {
+      await action();
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  private async reloadClubs(): Promise<void> {
+    this.clubs.set(await this.api.get<Club[]>('/clubs', this.token()));
+  }
+
+  private async reloadCompetitors(): Promise<void> {
+    this.competitors.set(await this.api.get<Competitor[]>('/competitors'));
+  }
+
+  private async reloadJudges(): Promise<void> {
+    this.judges.set(await this.api.get<Judge[]>('/judges', this.token()));
+  }
+
+  private async reloadCompetitions(): Promise<void> {
+    this.competitions.set(await this.api.get<Competition[]>('/competitions'));
+  }
+
+  private async ensureTabData(tab: AdminTab): Promise<void> {
+    if (this.loadedTabs.has(tab)) {
+      return;
+    }
+
+    try {
+      switch (tab) {
+        case 'clubs':
+          await this.reloadClubs();
+          break;
+        case 'competitors':
+          await Promise.all([this.reloadCompetitors(), this.reloadClubs()]);
+          break;
+        case 'judges':
+          await Promise.all([this.reloadJudges(), this.reloadClubs()]);
+          break;
+        case 'competitions':
+          await this.reloadCompetitions();
+          break;
+        case 'teams':
+          await Promise.all([this.loadAllTeams(), this.reloadCompetitors()]);
+          break;
+        case 'assignments':
+          await Promise.all([
+            this.reloadCompetitions(),
+            this.loadAllTeams(),
+            this.reloadJudges(),
+          ]);
+          break;
+        case 'ranking':
+          await this.reloadCompetitions();
+          break;
+        case 'results':
+          await this.reloadCompetitions();
+          break;
+      }
+
+      this.loadedTabs.add(tab);
+    } catch (err) {
+      this.notify(
+        err instanceof Error ? err.message : 'Greška pri učitavanju podataka',
+        'error',
+      );
+    }
+  }
+
+  showFieldError(form: FormGroup, field: string): boolean {
+    const control = form.get(field);
+    return !!(control && control.invalid && control.touched);
+  }
+
+  fieldErrorMessage(form: FormGroup, field: string): string {
+    const control = form.get(field);
+    if (!control?.errors) {
+      return '';
+    }
+
+    if (control.errors['required']) {
+      return 'Obavezno polje';
+    }
+
+    if (control.errors['email']) {
+      return 'Neispravan email';
+    }
+
+    if (control.errors['minlength']) {
+      return 'Min. 6 znakova';
+    }
+
+    if (control.errors['min']) {
+      return 'Min. 1';
+    }
+
+    return 'Neispravno polje';
+  }
+
+  private setJudgePasswordValidators(isNew: boolean): void {
+    const passwordControl = this.judgeForm.get('password');
+    if (!passwordControl) {
+      return;
+    }
+
+    if (isNew) {
+      passwordControl.setValidators([Validators.required, Validators.minLength(6)]);
+    } else {
+      passwordControl.clearValidators();
+    }
+
+    passwordControl.updateValueAndValidity();
   }
 
   async onAssignmentCompetitionChange(): Promise<void> {
@@ -1207,13 +1456,19 @@ export class AdminComponent implements OnInit {
   }
 
   async unregisterTeam(id: string): Promise<void> {
-    try {
-      await this.api.delete(`/competition-teams/${id}`, this.token());
-      await this.loadAssignmentData();
-      this.notify('Tim uklonjen s natjecanja');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (!this.confirmDelete('ovaj tim s natjecanja')) {
+      return;
     }
+
+    await this.withBusy(async () => {
+      try {
+        await this.api.delete(`/competition-teams/${id}`, this.token());
+        await this.loadAssignmentData();
+        this.notify('Tim uklonjen s natjecanja');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   onAssignmentTeamChange(): void {
@@ -1310,13 +1565,19 @@ export class AdminComponent implements OnInit {
   }
 
   async deleteJudgeAssignment(id: string): Promise<void> {
-    try {
-      await this.api.delete(`/judge-assignments/${id}`, this.token());
-      await this.loadAssignmentData();
-      this.notify('Dodjela uklonjena');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (!this.confirmDelete('ovu dodjelu suca')) {
+      return;
     }
+
+    await this.withBusy(async () => {
+      try {
+        await this.api.delete(`/judge-assignments/${id}`, this.token());
+        await this.loadAssignmentData();
+        this.notify('Dodjela uklonjena');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   async onRankingCompetitionChange(): Promise<void> {
@@ -1378,33 +1639,41 @@ export class AdminComponent implements OnInit {
     const reordered = [...tiedRows];
     [reordered[index], reordered[swapIndex]] = [reordered[swapIndex], reordered[index]];
 
-    try {
-      const overrides = reordered.map((row, order) => ({
-        competitor_id: row.competitorId,
-        tie_break_order: order,
-      }));
+    await this.withBusy(async () => {
+      try {
+        const overrides = reordered.map((row, order) => ({
+          competitor_id: row.competitorId,
+          tie_break_order: order,
+        }));
 
-      const saved = await this.api.put<CompetitorRankOverride[]>(
-        '/rankings',
-        {
-          competition_id: competition.id,
-          category: this.rankingCategory,
-          overrides,
-        },
-        this.token(),
-      );
+        const saved = await this.api.put<CompetitorRankOverride[]>(
+          '/rankings',
+          {
+            competition_id: competition.id,
+            category: this.rankingCategory(),
+            age_category: this.rankingAgeCategory(),
+            overrides,
+          },
+          this.token(),
+        );
 
-      const otherOverrides = (competition.rank_overrides ?? []).filter(
-        (item) => item.category !== this.rankingCategory,
-      );
-      this.rankingCompetition.set({
-        ...competition,
-        rank_overrides: [...otherOverrides, ...saved],
-      });
-      this.notify('Poredak ažuriran');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
-    }
+        const otherOverrides = (competition.rank_overrides ?? []).filter(
+          (item) =>
+            !(
+              item.category === this.rankingCategory() &&
+              (item.age_category ?? this.rankingAgeCategory()) ===
+                this.rankingAgeCategory()
+            ),
+        );
+        this.rankingCompetition.set({
+          ...competition,
+          rank_overrides: [...otherOverrides, ...saved],
+        });
+        this.notify('Poredak ažuriran');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   async onResultsCompetitionChange(): Promise<void> {
@@ -1528,243 +1797,320 @@ export class AdminComponent implements OnInit {
     );
   }
 
+  openNewClub(): void {
+    this.editingClubId.set(null);
+    this.clubForm.reset({ name: '' });
+    this.clubModalOpen.set(true);
+  }
+
   async saveClub(): Promise<void> {
-    try {
-      const id = this.editingClubId();
-      if (id) {
-        await this.api.patch(`/clubs/${id}`, this.clubForm, this.token());
-        this.notify('Klub ažuriran');
-      } else {
-        await this.api.post('/clubs', this.clubForm, this.token());
-        this.notify('Klub dodan');
-      }
-      this.cancelClubEdit();
-      await this.reloadAll();
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (this.clubForm.invalid) {
+      this.clubForm.markAllAsTouched();
+      return;
     }
+
+    const payload = this.clubForm.getRawValue();
+
+    await this.withBusy(async () => {
+      try {
+        const id = this.editingClubId();
+        if (id) {
+          await this.api.patch(`/clubs/${id}`, payload, this.token());
+          this.notify('Klub ažuriran');
+        } else {
+          await this.api.post('/clubs', payload, this.token());
+          this.notify('Klub dodan');
+        }
+        this.cancelClubEdit();
+        await this.reloadClubs();
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   startEditClub(club: Club): void {
     this.editingClubId.set(club.id);
-    this.clubForm = { name: club.name };
+    this.clubForm.reset({ name: club.name });
+    this.clubModalOpen.set(true);
   }
 
   cancelClubEdit(): void {
     this.editingClubId.set(null);
-    this.clubForm = { name: '' };
+    this.clubForm.reset({ name: '' });
+    this.clubModalOpen.set(false);
   }
 
   async deleteClub(id: string): Promise<void> {
-    try {
-      if (this.editingClubId() === id) {
-        this.cancelClubEdit();
-      }
-      await this.api.delete(`/clubs/${id}`, this.token());
-      this.clubs.update((items) => items.filter((item) => item.id !== id));
-      await this.reloadAll();
-      this.notify('Klub obrisan');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (!this.confirmDelete('ovaj klub')) {
+      return;
     }
+
+    await this.withBusy(async () => {
+      try {
+        if (this.editingClubId() === id) {
+          this.cancelClubEdit();
+        }
+        await this.api.delete(`/clubs/${id}`, this.token());
+        this.clubs.update((items) => items.filter((item) => item.id !== id));
+        await Promise.all([this.reloadClubs(), this.reloadCompetitors()]);
+        this.notify('Klub obrisan');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   openNewCompetitor(): void {
     this.editingCompetitorId.set(null);
-    this.competitorForm = { name: '', club_id: '', age_category: 'osnovna' };
+    this.competitorForm.reset({ name: '', club_id: '', age_category: 'osnovna' });
     this.competitorModalOpen.set(true);
   }
 
   async saveCompetitor(): Promise<void> {
-    try {
-      const id = this.editingCompetitorId();
-      if (id) {
-        await this.api.patch(`/competitors/${id}`, this.competitorForm, this.token());
-        this.notify('Natjecatelj ažuriran');
-      } else {
-        await this.api.post('/competitors', this.competitorForm, this.token());
-        this.notify('Natjecatelj dodan');
-      }
-      this.cancelCompetitorEdit();
-      await this.reloadAll();
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (this.competitorForm.invalid) {
+      this.competitorForm.markAllAsTouched();
+      return;
     }
+
+    const payload = this.competitorForm.getRawValue();
+
+    await this.withBusy(async () => {
+      try {
+        const id = this.editingCompetitorId();
+        if (id) {
+          await this.api.patch(`/competitors/${id}`, payload, this.token());
+          this.notify('Natjecatelj ažuriran');
+        } else {
+          await this.api.post('/competitors', payload, this.token());
+          this.notify('Natjecatelj dodan');
+        }
+        this.cancelCompetitorEdit();
+        await this.reloadCompetitors();
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   startEditCompetitor(item: Competitor): void {
     this.editingCompetitorId.set(item.id);
-    this.competitorForm = {
+    this.competitorForm.reset({
       name: item.name,
       club_id: item.club_id,
       age_category: item.age_category,
-    };
+    });
     this.competitorModalOpen.set(true);
   }
 
   cancelCompetitorEdit(): void {
     this.editingCompetitorId.set(null);
-    this.competitorForm = { name: '', club_id: '', age_category: 'osnovna' };
+    this.competitorForm.reset({ name: '', club_id: '', age_category: 'osnovna' });
     this.competitorModalOpen.set(false);
   }
 
   async deleteCompetitor(id: string): Promise<void> {
-    try {
-      if (this.editingCompetitorId() === id) {
-        this.cancelCompetitorEdit();
-      }
-      await this.api.delete(`/competitors/${id}`, this.token());
-      this.competitors.update((items) => items.filter((item) => item.id !== id));
-      await this.reloadAll();
-      this.notify('Natjecatelj obrisan');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (!this.confirmDelete('ovog natjecatelja')) {
+      return;
     }
+
+    await this.withBusy(async () => {
+      try {
+        if (this.editingCompetitorId() === id) {
+          this.cancelCompetitorEdit();
+        }
+        await this.api.delete(`/competitors/${id}`, this.token());
+        this.competitors.update((items) => items.filter((item) => item.id !== id));
+        await this.reloadCompetitors();
+        this.notify('Natjecatelj obrisan');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
+  }
+
+  openNewJudge(): void {
+    this.editingJudgeId.set(null);
+    this.setJudgePasswordValidators(true);
+    this.judgeForm.reset({ name: '', email: '', password: '', club_id: '' });
+    this.judgeModalOpen.set(true);
   }
 
   async saveJudge(): Promise<void> {
-    try {
-      const id = this.editingJudgeId();
-      const payload: Record<string, string> = {
-        name: this.judgeForm.name,
-        email: this.judgeForm.email,
-        club_id: this.judgeForm.club_id,
-      };
-
-      if (this.judgeForm.password.trim()) {
-        payload['password'] = this.judgeForm.password;
-      } else if (!id) {
-        this.notify('Lozinka je obavezna za novog suca', 'error');
-        return;
-      }
-
-      if (id) {
-        await this.api.patch(`/judges/${id}`, payload, this.token());
-        this.notify('Sudac ažuriran');
-      } else {
-        await this.api.post('/judges', payload, this.token());
-        this.notify('Sudac dodan');
-      }
-      this.cancelJudgeEdit();
-      await this.reloadAll();
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (this.judgeForm.invalid) {
+      this.judgeForm.markAllAsTouched();
+      return;
     }
+
+    const value = this.judgeForm.getRawValue();
+    const id = this.editingJudgeId();
+    const payload: Record<string, string> = {
+      name: value.name ?? '',
+      email: value.email ?? '',
+      club_id: value.club_id ?? '',
+    };
+
+    if (value.password?.trim()) {
+      payload['password'] = value.password;
+    } else if (!id) {
+      this.notify('Lozinka je obavezna za novog suca', 'error');
+      return;
+    }
+
+    await this.withBusy(async () => {
+      try {
+        if (id) {
+          await this.api.patch(`/judges/${id}`, payload, this.token());
+          this.notify('Sudac ažuriran');
+        } else {
+          await this.api.post('/judges', payload, this.token());
+          this.notify('Sudac dodan');
+        }
+        this.cancelJudgeEdit();
+        await this.reloadJudges();
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   startEditJudge(item: Judge): void {
     this.editingJudgeId.set(item.id);
-    this.judgeForm = {
+    this.setJudgePasswordValidators(false);
+    this.judgeForm.reset({
       name: item.name,
       email: item.email,
       password: '',
       club_id: item.club_id,
-    };
+    });
+    this.judgeModalOpen.set(true);
   }
 
   cancelJudgeEdit(): void {
     this.editingJudgeId.set(null);
-    this.judgeForm = { name: '', email: '', password: '', club_id: '' };
+    this.setJudgePasswordValidators(false);
+    this.judgeForm.reset({ name: '', email: '', password: '', club_id: '' });
+    this.judgeModalOpen.set(false);
   }
 
   async deleteJudge(id: string): Promise<void> {
-    try {
-      if (this.editingJudgeId() === id) {
-        this.cancelJudgeEdit();
-      }
-      await this.api.delete(`/judges/${id}`, this.token());
-      this.judges.update((items) => items.filter((item) => item.id !== id));
-      await this.reloadAll();
-      this.notify('Sudac obrisan');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (!this.confirmDelete('ovog suca')) {
+      return;
     }
+
+    await this.withBusy(async () => {
+      try {
+        if (this.editingJudgeId() === id) {
+          this.cancelJudgeEdit();
+        }
+        await this.api.delete(`/judges/${id}`, this.token());
+        this.judges.update((items) => items.filter((item) => item.id !== id));
+        await this.reloadJudges();
+        this.notify('Sudac obrisan');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   openNewCompetition(): void {
     this.editingCompetitionId.set(null);
-    this.competitionForm = {
+    this.competitionForm.reset({
       name: '',
       location: '',
       status: 'upcoming',
       launches_per_category: 2,
       traka_window_minutes: 30,
       padobran_window_minutes: 45,
-    };
+    });
     this.competitionModalOpen.set(true);
   }
 
   startEditCompetition(competition: Competition): void {
     this.editingCompetitionId.set(competition.id);
-    this.competitionForm = {
+    this.competitionForm.reset({
       name: competition.name,
       location: competition.location ?? '',
       status: competition.status,
       launches_per_category: competition.launches_per_category,
       traka_window_minutes: Math.round((competition.traka_window_seconds ?? 1800) / 60),
       padobran_window_minutes: Math.round((competition.padobran_window_seconds ?? 2700) / 60),
-    };
+    });
     this.competitionModalOpen.set(true);
   }
 
   cancelCompetitionEdit(): void {
     this.editingCompetitionId.set(null);
-    this.competitionForm = {
+    this.competitionForm.reset({
       name: '',
       location: '',
       status: 'upcoming',
       launches_per_category: 2,
       traka_window_minutes: 30,
       padobran_window_minutes: 45,
-    };
+    });
     this.competitionModalOpen.set(false);
   }
 
   async saveCompetition(): Promise<void> {
-    try {
-      const payload = {
-        name: this.competitionForm.name,
-        location: this.competitionForm.location,
-        launches_per_category: this.competitionForm.launches_per_category,
-        traka_window_seconds: this.competitionForm.traka_window_minutes * 60,
-        padobran_window_seconds: this.competitionForm.padobran_window_minutes * 60,
-      };
-
-      const id = this.editingCompetitionId();
-      if (id) {
-        await this.api.patch(`/competitions/${id}`, payload, this.token());
-        this.notify('Natjecanje ažurirano');
-      } else {
-        await this.api.post(
-          '/competitions',
-          {
-            ...payload,
-            status: this.competitionForm.status,
-          },
-          this.token(),
-        );
-        this.notify('Natjecanje kreirano');
-      }
-
-      this.cancelCompetitionEdit();
-      await this.reloadAll();
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (this.competitionForm.invalid) {
+      this.competitionForm.markAllAsTouched();
+      return;
     }
+
+    const value = this.competitionForm.getRawValue();
+    const payload = {
+      name: value.name ?? '',
+      location: value.location ?? '',
+      launches_per_category: value.launches_per_category ?? 2,
+      traka_window_seconds: (value.traka_window_minutes ?? 30) * 60,
+      padobran_window_seconds: (value.padobran_window_minutes ?? 45) * 60,
+    };
+
+    await this.withBusy(async () => {
+      try {
+        const id = this.editingCompetitionId();
+        if (id) {
+          await this.api.patch(`/competitions/${id}`, payload, this.token());
+          this.notify('Natjecanje ažurirano');
+        } else {
+          await this.api.post(
+            '/competitions',
+            {
+              ...payload,
+              status: value.status ?? 'upcoming',
+            },
+            this.token(),
+          );
+          this.notify('Natjecanje kreirano');
+        }
+
+        this.cancelCompetitionEdit();
+        await this.reloadCompetitions();
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   async deleteCompetition(id: string): Promise<void> {
-    try {
-      if (this.editingCompetitionId() === id) {
-        this.cancelCompetitionEdit();
-      }
-      await this.api.delete(`/competitions/${id}`, this.token());
-      this.competitions.update((items) => items.filter((item) => item.id !== id));
-      await this.reloadAll();
-      this.notify('Natjecanje obrisano');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (!this.confirmDelete('ovo natjecanje')) {
+      return;
     }
+
+    await this.withBusy(async () => {
+      try {
+        if (this.editingCompetitionId() === id) {
+          this.cancelCompetitionEdit();
+        }
+        await this.api.delete(`/competitions/${id}`, this.token());
+        this.competitions.update((items) => items.filter((item) => item.id !== id));
+        await this.reloadCompetitions();
+        this.notify('Natjecanje obrisano');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   categoryRemainingLabel(competition: Competition, category: LaunchCategory): string {
@@ -1791,44 +2137,54 @@ export class AdminComponent implements OnInit {
     category: LaunchCategory,
     open: boolean,
   ): Promise<void> {
-    try {
-      const payload =
-        category === 'traka' ? { traka_open: open } : { padobran_open: open };
+    await this.withBusy(async () => {
+      try {
+        const payload =
+          category === 'traka' ? { traka_open: open } : { padobran_open: open };
 
-      await this.api.patch(`/competitions/${id}`, payload, this.token());
-      await this.reloadAll();
-      this.notify(
-        open
-          ? `Kategorija ${category === 'traka' ? 'Traka' : 'Padobran'} otvorena`
-          : `Kategorija ${category === 'traka' ? 'Traka' : 'Padobran'} zatvorena`,
-      );
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
-    }
+        await this.api.patch(`/competitions/${id}`, payload, this.token());
+        await this.reloadCompetitions();
+        this.notify(
+          open
+            ? `Kategorija ${category === 'traka' ? 'Traka' : 'Padobran'} otvorena`
+            : `Kategorija ${category === 'traka' ? 'Traka' : 'Padobran'} zatvorena`,
+        );
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   async activateCompetition(id: string): Promise<void> {
-    try {
-      await this.api.patch(`/competitions/${id}`, { status: 'active' }, this.token());
-      await this.reloadAll();
-      this.notify('Natjecanje aktivirano');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
-    }
+    await this.withBusy(async () => {
+      try {
+        await this.api.patch(`/competitions/${id}`, { status: 'active' }, this.token());
+        await this.reloadCompetitions();
+        this.notify('Natjecanje aktivirano');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   async finishCompetition(id: string): Promise<void> {
-    try {
-      await this.api.patch(
-        `/competitions/${id}`,
-        { status: 'finished', traka_open: false, padobran_open: false },
-        this.token(),
-      );
-      await this.reloadAll();
-      this.notify('Natjecanje završeno');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (!window.confirm('Završiti ovo natjecanje? Status će postati „završeno“.')) {
+      return;
     }
+
+    await this.withBusy(async () => {
+      try {
+        await this.api.patch(
+          `/competitions/${id}`,
+          { status: 'finished', traka_open: false, padobran_open: false },
+          this.token(),
+        );
+        await this.reloadCompetitions();
+        this.notify('Natjecanje završeno');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 
   async loadAllTeams(): Promise<void> {
@@ -1843,76 +2199,90 @@ export class AdminComponent implements OnInit {
 
   openNewTeam(): void {
     this.editingTeamId.set(null);
-    this.teamForm = {
+    this.teamForm.reset({
       name: '',
       competitor1: '',
       competitor2: '',
       competitor3: '',
-    };
+    });
     this.teamModalOpen.set(true);
   }
 
   startEditTeam(team: Team): void {
     const members = team.members ?? [];
     this.editingTeamId.set(team.id);
-    this.teamForm = {
+    this.teamForm.reset({
       name: team.name ?? '',
       competitor1: members[0]?.competitor.id ?? '',
       competitor2: members[1]?.competitor.id ?? '',
       competitor3: members[2]?.competitor.id ?? '',
-    };
+    });
     this.teamModalOpen.set(true);
   }
 
   cancelTeamEdit(): void {
     this.editingTeamId.set(null);
-    this.teamForm = {
+    this.teamForm.reset({
       name: '',
       competitor1: '',
       competitor2: '',
       competitor3: '',
-    };
+    });
     this.teamModalOpen.set(false);
   }
 
   async saveTeam(): Promise<void> {
-    const competitor_ids = [this.teamForm.competitor1, this.teamForm.competitor2]
-      .concat(this.teamForm.competitor3 ? [this.teamForm.competitor3] : [])
+    if (this.teamForm.invalid) {
+      this.teamForm.markAllAsTouched();
+      return;
+    }
+
+    const value = this.teamForm.getRawValue();
+    const competitor_ids = [value.competitor1, value.competitor2]
+      .concat(value.competitor3 ? [value.competitor3] : [])
       .filter(Boolean);
 
-    try {
-      const payload = {
-        name: this.teamForm.name || undefined,
-        competitor_ids,
-      };
+    await this.withBusy(async () => {
+      try {
+        const payload = {
+          name: value.name || undefined,
+          competitor_ids,
+        };
 
-      const id = this.editingTeamId();
-      if (id) {
-        await this.api.patch(`/teams/${id}`, payload, this.token());
-        this.notify('Tim ažuriran');
-      } else {
-        await this.api.post('/teams', payload, this.token());
-        this.notify('Tim spremljen');
+        const id = this.editingTeamId();
+        if (id) {
+          await this.api.patch(`/teams/${id}`, payload, this.token());
+          this.notify('Tim ažuriran');
+        } else {
+          await this.api.post('/teams', payload, this.token());
+          this.notify('Tim spremljen');
+        }
+
+        this.cancelTeamEdit();
+        await this.loadAllTeams();
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
       }
-
-      this.cancelTeamEdit();
-      await this.loadAllTeams();
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
-    }
+    });
   }
 
   async deleteTeam(id: string): Promise<void> {
-    try {
-      if (this.editingTeamId() === id) {
-        this.cancelTeamEdit();
-      }
-      await this.api.delete(`/teams/${id}`, this.token());
-      this.savedTeams.update((items) => items.filter((item) => item.id !== id));
-      await this.loadAllTeams();
-      this.notify('Tim obrisan');
-    } catch (err) {
-      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+    if (!this.confirmDelete('ovaj tim')) {
+      return;
     }
+
+    await this.withBusy(async () => {
+      try {
+        if (this.editingTeamId() === id) {
+          this.cancelTeamEdit();
+        }
+        await this.api.delete(`/teams/${id}`, this.token());
+        this.savedTeams.update((items) => items.filter((item) => item.id !== id));
+        await this.loadAllTeams();
+        this.notify('Tim obrisan');
+      } catch (err) {
+        this.notify(err instanceof Error ? err.message : 'Greška', 'error');
+      }
+    });
   }
 }

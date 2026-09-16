@@ -226,6 +226,7 @@ export interface CompetitorRankOverride {
   id?: string;
   competition_id: string;
   category: LaunchCategory;
+  age_category: CompetitorAgeCategory;
   competitor_id: string;
   tie_break_order: number;
 }
