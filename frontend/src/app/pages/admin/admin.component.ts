@@ -1561,6 +1561,7 @@ export class AdminComponent implements OnInit {
         this.cancelClubEdit();
       }
       await this.api.delete(`/clubs/${id}`, this.token());
+      this.clubs.update((items) => items.filter((item) => item.id !== id));
       await this.reloadAll();
       this.notify('Klub obrisan');
     } catch (err) {
@@ -1613,6 +1614,7 @@ export class AdminComponent implements OnInit {
         this.cancelCompetitorEdit();
       }
       await this.api.delete(`/competitors/${id}`, this.token());
+      this.competitors.update((items) => items.filter((item) => item.id !== id));
       await this.reloadAll();
       this.notify('Natjecatelj obrisan');
     } catch (err) {
@@ -1671,6 +1673,7 @@ export class AdminComponent implements OnInit {
         this.cancelJudgeEdit();
       }
       await this.api.delete(`/judges/${id}`, this.token());
+      this.judges.update((items) => items.filter((item) => item.id !== id));
       await this.reloadAll();
       this.notify('Sudac obrisan');
     } catch (err) {
@@ -1751,11 +1754,17 @@ export class AdminComponent implements OnInit {
   }
 
   async deleteCompetition(id: string): Promise<void> {
-    if (this.editingCompetitionId() === id) {
-      this.cancelCompetitionEdit();
+    try {
+      if (this.editingCompetitionId() === id) {
+        this.cancelCompetitionEdit();
+      }
+      await this.api.delete(`/competitions/${id}`, this.token());
+      this.competitions.update((items) => items.filter((item) => item.id !== id));
+      await this.reloadAll();
+      this.notify('Natjecanje obrisano');
+    } catch (err) {
+      this.notify(err instanceof Error ? err.message : 'Greška', 'error');
     }
-    await this.api.delete(`/competitions/${id}`, this.token());
-    await this.reloadAll();
   }
 
   categoryRemainingLabel(competition: Competition, category: LaunchCategory): string {
@@ -1899,6 +1908,7 @@ export class AdminComponent implements OnInit {
         this.cancelTeamEdit();
       }
       await this.api.delete(`/teams/${id}`, this.token());
+      this.savedTeams.update((items) => items.filter((item) => item.id !== id));
       await this.loadAllTeams();
       this.notify('Tim obrisan');
     } catch (err) {

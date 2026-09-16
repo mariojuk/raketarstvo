@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { environment } from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
@@ -26,7 +26,7 @@ export class ApiService {
       throw await this.parseError(response);
     }
 
-    return response.json() as Promise<T>;
+    return this.parseBody<T>(response);
   }
 
   async post<T>(path: string, body: unknown, token?: string): Promise<T> {
@@ -40,7 +40,7 @@ export class ApiService {
       throw await this.parseError(response);
     }
 
-    return response.json() as Promise<T>;
+    return this.parseBody<T>(response);
   }
 
   async patch<T>(path: string, body: unknown, token?: string): Promise<T> {
@@ -54,7 +54,7 @@ export class ApiService {
       throw await this.parseError(response);
     }
 
-     return response.json() as Promise<T>;
+    return this.parseBody<T>(response);
   }
 
   async put<T>(path: string, body: unknown, token?: string): Promise<T> {
@@ -68,10 +68,10 @@ export class ApiService {
       throw await this.parseError(response);
     }
 
-    return response.json() as Promise<T>;
+    return this.parseBody<T>(response);
   }
 
-  async delete<T>(path: string, token?: string): Promise<T> {
+  async delete<T = void>(path: string, token?: string): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method: 'DELETE',
       headers: this.headers(token),
@@ -81,7 +81,21 @@ export class ApiService {
       throw await this.parseError(response);
     }
 
-    return response.json() as Promise<T>;
+    return this.parseBody<T>(response);
+  }
+
+  /** DELETE/neki POST odgovori mogu biti prazni (204 / null) — ne smiju bacati grešku. */
+  private async parseBody<T>(response: Response): Promise<T> {
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    const text = (await response.text()).trim();
+    if (!text || text === 'null') {
+      return undefined as T;
+    }
+
+    return JSON.parse(text) as T;
   }
 
   private async parseError(response: Response): Promise<Error> {
