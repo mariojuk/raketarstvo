@@ -1,6 +1,8 @@
 name = "raketarstvo"
 compatibility_date = "2024-11-11"
 
+# SPA routing (/admin, /sudac, ...) — do NOT add public/_redirects
+# (Cloudflare rejects /* -> /index.html as an infinite loop)
 [assets]
 directory = "./dist/frontend/browser"
 not_found_handling = "single-page-application"
